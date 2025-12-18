@@ -1,5 +1,5 @@
 {
-  "name": "NovaHUB - No IA",
-  "description": "Plataforma inteligente para filtrar licitaciones públicas y generar proyectos.",
+  "name": "NovaHUB",
+  "description": "Plataforma para consultar y filtrar licitaciones públicas de la PLACSP en tiempo real.",
   "requestFramePermissions": []
 }

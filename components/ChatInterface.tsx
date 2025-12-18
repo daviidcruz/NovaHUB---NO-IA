@@ -1,6 +1,9 @@
 import React from 'react';
 
-// This component has been deprecated and AI features removed.
+/**
+ * Componente eliminado. 
+ * Las funcionalidades de asistencia por IA no están disponibles.
+ */
 export const ChatInterface: React.FC = () => {
   return null;
 };
