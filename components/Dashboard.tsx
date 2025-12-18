@@ -20,6 +20,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ favorites, toggleFavorite,
   const [searchTerm, setSearchTerm] = useState('');
   const [sortOrder, setSortOrder] = useState<SortOption>('newest');
   const [selectedSource, setSelectedSource] = useState<SourceFilter>('all');
+  
   const [showOnlyRelevant, setShowOnlyRelevant] = useState(true); 
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
@@ -72,12 +73,19 @@ export const Dashboard: React.FC<DashboardProps> = ({ favorites, toggleFavorite,
   };
 
   const filteredTenders = tenders.filter(t => {
+    // Relevancia por palabras clave
     if (showOnlyRelevant && t.keywordsFound.length === 0) return false;
+    
+    // Filtro por origen
     if (selectedSource !== 'all' && t.sourceType !== selectedSource) return false;
+    
+    // Búsqueda textual
     const matchesSearch = 
       t.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
       t.summary.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (t.organism && t.organism.toLowerCase().includes(searchTerm.toLowerCase())) ||
       t.keywordsFound.some(k => k.toLowerCase().includes(searchTerm.toLowerCase()));
+    
     return matchesSearch;
   });
 
@@ -114,7 +122,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ favorites, toggleFavorite,
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
         <div>
             <h2 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">Panel de Licitaciones</h2>
-            <p className="text-gray-600 dark:text-gray-400">Consulta en tiempo real las ofertas públicas oficiales.</p>
+            <p className="text-gray-600 dark:text-gray-400">Consulta en tiempo real las ofertas públicas oficiales de la PLACSP.</p>
         </div>
         
         <div className="flex items-center gap-4">
@@ -146,7 +154,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ favorites, toggleFavorite,
             <Search className="text-gray-400" size={20} />
             <input 
                 type="text" 
-                placeholder="Buscar por título, organismo..." 
+                placeholder="Buscar por título, organismo o palabra clave..." 
                 className="flex-1 bg-transparent text-gray-900 dark:text-white outline-none text-sm"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
@@ -164,19 +172,20 @@ export const Dashboard: React.FC<DashboardProps> = ({ favorites, toggleFavorite,
                 }`}
              >
                 <Layers size={16} />
-                <span>Todas las licitaciones</span>
+                <span>Mostrar todas (sin filtro keywords)</span>
              </button>
 
              <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 w-full xl:w-auto xl:justify-end">
                 <span className="text-sm text-gray-500 dark:text-gray-400 hidden sm:inline-block">{sortedTenders.length} resultados</span>
                 
-                <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
-                    <div className="flex items-center gap-2 bg-white dark:bg-slate-900 px-3 py-1.5 rounded-lg border border-gray-200 dark:border-slate-700 shadow-sm transition-colors w-full sm:w-auto">
+                <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+                    {/* Filtro Origen */}
+                    <div className="flex items-center gap-2 bg-white dark:bg-slate-900 px-3 py-1.5 rounded-lg border border-gray-200 dark:border-slate-700 shadow-sm transition-colors min-w-[140px]">
                         <Database size={14} className="text-gray-400" />
                         <select
                             value={selectedSource}
                             onChange={(e) => setSelectedSource(e.target.value as SourceFilter)}
-                            className="bg-transparent border-none text-gray-700 dark:text-gray-200 font-medium focus:ring-0 cursor-pointer outline-none text-sm"
+                            className="bg-transparent border-none text-gray-700 dark:text-gray-200 font-medium focus:ring-0 cursor-pointer outline-none text-sm w-full"
                         >
                             <option value="all">Orígenes</option>
                             <option value="Perfiles Contratante">Perfiles</option>
@@ -185,12 +194,13 @@ export const Dashboard: React.FC<DashboardProps> = ({ favorites, toggleFavorite,
                         </select>
                     </div>
 
-                    <div className="flex items-center gap-2 bg-white dark:bg-slate-900 px-3 py-1.5 rounded-lg border border-gray-200 dark:border-slate-700 shadow-sm transition-colors w-full sm:w-auto">
+                    {/* Ordenar */}
+                    <div className="flex items-center gap-2 bg-white dark:bg-slate-900 px-3 py-1.5 rounded-lg border border-gray-200 dark:border-slate-700 shadow-sm transition-colors min-w-[140px]">
                         <Filter size={14} className="text-gray-400" />
                         <select
                             value={sortOrder}
                             onChange={(e) => setSortOrder(e.target.value as SortOption)}
-                            className="bg-transparent border-none text-gray-700 dark:text-gray-200 font-medium focus:ring-0 cursor-pointer outline-none text-sm"
+                            className="bg-transparent border-none text-gray-700 dark:text-gray-200 font-medium focus:ring-0 cursor-pointer outline-none text-sm w-full"
                         >
                             <option value="newest">Recientes</option>
                             <option value="oldest">Antiguas</option>
@@ -223,7 +233,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ favorites, toggleFavorite,
                                 <div className="h-px bg-gray-200 dark:bg-slate-800 flex-1"></div>
                                 <div className="px-4 py-1 bg-gray-50 dark:bg-slate-900 text-gray-400 rounded-full text-xs font-bold uppercase tracking-wider flex items-center gap-2">
                                     <CheckCircle2 size={12} />
-                                    Anteriores
+                                    Vistas anteriormente
                                 </div>
                                 <div className="h-px bg-gray-200 dark:bg-slate-800 flex-1"></div>
                             </div>
@@ -248,7 +258,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ favorites, toggleFavorite,
                 <Search className="mx-auto h-12 w-12 text-gray-300 mb-4" />
                 <h3 className="text-lg font-medium text-gray-900 dark:text-white">Sin resultados</h3>
                 <p className="text-gray-500 dark:text-gray-400 mt-1">
-                    No se han encontrado licitaciones que coincidan con tus filtros.
+                    No se han encontrado licitaciones con los filtros aplicados.
                 </p>
               </div>
             )}

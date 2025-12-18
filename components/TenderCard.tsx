@@ -1,6 +1,6 @@
 import React from 'react';
 import { Tender } from '../types';
-import { Calendar, Bookmark, Building2, Euro, ExternalLink } from 'lucide-react';
+import { Calendar, Bookmark, Building2, Euro, ExternalLink, Activity } from 'lucide-react';
 
 interface TenderCardProps {
   tender: Tender;
@@ -11,11 +11,33 @@ interface TenderCardProps {
 export const TenderCard: React.FC<TenderCardProps> = ({ tender, isFavorite, onToggleFavorite }) => {
   const hasLink = tender.link && tender.link !== '#' && tender.link.trim() !== '';
 
+  const getStatusStyles = (status?: string) => {
+      if (!status) return 'bg-gray-100 text-gray-600 dark:bg-slate-800 dark:text-slate-400';
+      const s = status.toLowerCase();
+      if (s.includes('publicada') || s.includes('anuncio previo') || s.includes('creada')) {
+          return 'bg-green-100 text-green-700 border-green-200 dark:bg-green-900/30 dark:text-green-300';
+      }
+      if (s.includes('formalizada') || s.includes('resuelta')) {
+          return 'bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-900/30 dark:text-blue-300';
+      }
+      if (s.includes('anulada') || s.includes('desierto')) {
+          return 'bg-red-100 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-300';
+      }
+      return 'bg-gray-100 text-gray-600 border-gray-200 dark:bg-slate-800 dark:text-slate-400';
+  };
+
   return (
     <div className="bg-white dark:bg-slate-900 border dark:border-slate-800 rounded-xl shadow-sm hover:shadow-md transition-all p-5">
       <div className="flex justify-between items-start gap-4">
         <div className="flex-1 min-w-0">
             <div className="flex flex-wrap gap-2 mb-3">
+                {tender.status && (
+                    <span className={`px-2 py-0.5 text-xs rounded-full font-bold border flex items-center gap-1 uppercase tracking-wider ${getStatusStyles(tender.status)}`}>
+                        <Activity size={10} />
+                        {tender.status}
+                    </span>
+                )}
+                
                 {tender.sourceType && (
                      <span className={`px-2 py-0.5 text-xs rounded-full font-medium border ${
                          tender.sourceType === 'Contratos Menores' 

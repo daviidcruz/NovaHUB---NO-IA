@@ -57,7 +57,10 @@ export const Layout: React.FC<LayoutProps> = ({
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-slate-950 flex flex-col md:flex-row transition-colors duration-200">
       <div className="md:hidden bg-white dark:bg-slate-900 border-b dark:border-slate-800 p-4 flex justify-between items-center sticky top-0 z-20 transition-colors">
-        <div className="font-bold text-xl text-blue-800 dark:text-blue-400">NovaHUB</div>
+        <div className="flex items-center gap-2">
+            <img src="https://novagob.org/wp-content/uploads/2025/12/favicon-NovaHUB.png" alt="NovaHUB Logo" className="w-8 h-8 object-contain" />
+            <div className="font-bold text-xl text-blue-800 dark:text-blue-400">NovaHUB</div>
+        </div>
         <button 
             onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
             className="text-gray-700 dark:text-gray-200"
@@ -72,8 +75,9 @@ export const Layout: React.FC<LayoutProps> = ({
         ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}
       `}>
         <div className="p-6 border-b dark:border-slate-800 hidden md:block">
-          <h1 className="text-2xl font-bold text-blue-800 dark:text-blue-400">NovaHUB</h1>
-          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Licitaciones Públicas</p>
+          <div className="flex items-center gap-3">
+            <img src="https://novagob.org/wp-content/uploads/2025/12/logoNovaHUB-scaled.png" alt="NovaHUB Logo" className="w-full h-auto object-contain max-h-12" />
+          </div>
         </div>
 
         <nav className="p-4 space-y-2">

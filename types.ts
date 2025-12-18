@@ -1,4 +1,3 @@
-
 export interface Tender {
   id: string;
   title: string;
@@ -9,11 +8,11 @@ export interface Tender {
   organism?: string; 
   contractType?: string; 
   sourceType: string; 
+  status?: string;
   keywordsFound: string[];
   isRead: boolean;
 }
 
-// Define ProjectDraft interface to store tender proposal details
 export interface ProjectDraft {
   tenderId: string;
   introduction: string;
