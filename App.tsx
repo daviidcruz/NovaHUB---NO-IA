@@ -6,7 +6,6 @@ import { Tender } from './types';
 import { DEFAULT_KEYWORDS } from './constants';
 
 type View = 'dashboard' | 'favorites';
-export type ThemeMode = 'light' | 'dark' | 'system';
 
 const App: React.FC = () => {
   const [currentView, setCurrentView] = useState<View>('dashboard');
@@ -31,15 +30,13 @@ const App: React.FC = () => {
 
   const favoriteIds = useMemo(() => new Set(favorites.map(t => t.id)), [favorites]);
 
-  const [themeMode, setThemeMode] = useState<ThemeMode>(() => {
-    if (typeof window !== 'undefined') {
-        const saved = localStorage.getItem('novaHubThemeMode');
-        if (saved === 'light' || saved === 'dark' || saved === 'system') {
-            return saved;
-        }
+  // Force light mode on mount
+  useEffect(() => {
+    if (typeof document !== 'undefined') {
+        document.documentElement.classList.remove('dark');
+        localStorage.removeItem('novaHubThemeMode');
     }
-    return 'system';
-  });
+  }, []);
 
   const [customKeywords, setCustomKeywords] = useState<string[]>(() => {
       if (typeof window !== 'undefined') {
@@ -48,33 +45,6 @@ const App: React.FC = () => {
       }
       return DEFAULT_KEYWORDS;
   });
-
-  useEffect(() => {
-    const root = document.documentElement;
-    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-
-    const applyTheme = () => {
-        if (themeMode === 'dark') {
-            root.classList.add('dark');
-        } else if (themeMode === 'light') {
-            root.classList.remove('dark');
-        } else if (themeMode === 'system') {
-            if (mediaQuery.matches) {
-                root.classList.add('dark');
-            } else {
-                root.classList.remove('dark');
-            }
-        }
-    };
-
-    applyTheme();
-    localStorage.setItem('novaHubThemeMode', themeMode);
-
-    if (themeMode === 'system') {
-        mediaQuery.addEventListener('change', applyTheme);
-        return () => mediaQuery.removeEventListener('change', applyTheme);
-    }
-  }, [themeMode]);
 
   const addKeyword = (keyword: string) => {
       const trimmed = keyword.trim();
@@ -110,8 +80,6 @@ const App: React.FC = () => {
     <Layout 
         currentView={currentView} 
         onViewChange={setCurrentView}
-        themeMode={themeMode}
-        setThemeMode={setThemeMode}
         keywords={customKeywords}
         onAddKeyword={addKeyword}
         onRemoveKeyword={removeKeyword}
