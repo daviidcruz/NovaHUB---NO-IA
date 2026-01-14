@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { fetchTenders } from '../services/tenderService';
 import { Tender } from '../types';
 import { TenderCard } from './TenderCard';
-import { Search, Loader2, ChevronLeft, ChevronRight, Filter, Layers, Database, RefreshCw, CheckCircle2 } from 'lucide-react';
+import { Search, Loader2, ChevronLeft, ChevronRight, Filter, Layers, RefreshCw, CheckCircle2 } from 'lucide-react';
 
 interface DashboardProps {
   favorites: Set<string>;
@@ -11,7 +11,6 @@ interface DashboardProps {
 }
 
 type SortOption = 'newest' | 'oldest' | 'highest_budget' | 'lowest_budget';
-type SourceFilter = 'all' | 'Perfiles Contratante' | 'Plataformas Agregadas' | 'Contratos Menores';
 
 export const Dashboard: React.FC<DashboardProps> = ({ favorites, toggleFavorite, keywords }) => {
   const [tenders, setTenders] = useState<Tender[]>([]);
@@ -19,9 +18,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ favorites, toggleFavorite,
   const [refreshing, setRefreshing] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [sortOrder, setSortOrder] = useState<SortOption>('newest');
-  const [selectedSource, setSelectedSource] = useState<SourceFilter>('all');
   
-  const [showOnlyRelevant, setShowOnlyRelevant] = useState(true); 
+  const [showOnlyRelevant, setShowOnlyRelevant] = useState(false); // Por defecto mostrar todas para ver que funciona
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
 
@@ -55,9 +53,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ favorites, toggleFavorite,
     }
   };
 
+  // Cargar datos al montar y cuando cambian las keywords
   useEffect(() => {
     loadData();
-  }, [keywords.length]);
+  }, [keywords]);
 
   const handleRefresh = async () => {
     if (tenders.length > 0) {
@@ -67,7 +66,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ favorites, toggleFavorite,
   };
 
   const parseAmount = (amountStr?: string): number => {
-    if (!amountStr) return 0;
+    if (!amountStr || amountStr === 'Consultar') return 0;
     const clean = amountStr.replace(/[^0-9,]/g, '');
     return parseFloat(clean.replace(',', '.')) || 0;
   };
@@ -75,9 +74,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ favorites, toggleFavorite,
   const filteredTenders = tenders.filter(t => {
     // Relevancia por palabras clave
     if (showOnlyRelevant && t.keywordsFound.length === 0) return false;
-    
-    // Filtro por origen
-    if (selectedSource !== 'all' && t.sourceType !== selectedSource) return false;
     
     // Búsqueda textual
     const matchesSearch = 
@@ -115,21 +111,27 @@ export const Dashboard: React.FC<DashboardProps> = ({ favorites, toggleFavorite,
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm, sortOrder, showOnlyRelevant, selectedSource]);
+  }, [searchTerm, sortOrder, showOnlyRelevant]);
 
   return (
     <div className="p-6 max-w-6xl mx-auto">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
         <div>
             <h2 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">Panel de Licitaciones</h2>
-            <p className="text-gray-600 dark:text-gray-400">Consulta en tiempo real las ofertas públicas oficiales de la PLACSP.</p>
+            <div className="flex items-center gap-2">
+                <span className="relative flex h-3 w-3">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span>
+                </span>
+                <p className="text-gray-600 dark:text-gray-400 text-sm">Conectado a Plataforma de Contratación (PLACSP)</p>
+            </div>
         </div>
         
         <div className="flex items-center gap-4">
             {unreadCount > 0 && (
                 <div className="flex items-center gap-2 animate-in fade-in slide-in-from-right-4 duration-300">
                     <span className="text-sm font-semibold text-gray-600 dark:text-gray-300 hidden sm:inline-block">
-                        Nuevas hoy
+                        Nuevas
                     </span>
                     <span className="flex items-center justify-center bg-blue-600 text-white text-xs font-bold px-2 py-0.5 rounded-full min-w-[24px] h-6 shadow-md">
                         {unreadCount}
@@ -140,21 +142,21 @@ export const Dashboard: React.FC<DashboardProps> = ({ favorites, toggleFavorite,
             <button 
                 onClick={handleRefresh}
                 disabled={refreshing || loading}
-                className="flex items-center gap-2 px-4 py-2 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 rounded-lg hover:bg-blue-100 transition-colors disabled:opacity-50 font-medium text-sm"
+                className="flex items-center gap-2 px-4 py-2 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 rounded-lg hover:bg-blue-100 transition-colors disabled:opacity-50 font-medium text-sm border border-blue-100 dark:border-blue-900"
             >
                 <RefreshCw size={16} className={refreshing ? 'animate-spin' : ''} />
-                {refreshing ? 'Actualizando...' : 'Actualizar'}
+                {refreshing ? 'Actualizando...' : 'Refrescar Feed'}
             </button>
         </div>
       </div>
 
       <div className="space-y-4 mb-6">
           <div className="flex flex-col md:flex-row gap-4 justify-between items-end md:items-center">
-            <div className="w-full bg-white dark:bg-slate-900 p-3 rounded-lg shadow-sm border border-gray-200 dark:border-slate-700 flex items-center space-x-3">
+            <div className="w-full bg-white dark:bg-slate-900 p-3 rounded-lg shadow-sm border border-gray-200 dark:border-slate-700 flex items-center space-x-3 focus-within:ring-2 ring-blue-500/20 transition-all">
             <Search className="text-gray-400" size={20} />
             <input 
                 type="text" 
-                placeholder="Buscar por título, organismo o palabra clave..." 
+                placeholder="Filtrar por título, expediente, organismo..." 
                 className="flex-1 bg-transparent text-gray-900 dark:text-white outline-none text-sm"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
@@ -166,34 +168,21 @@ export const Dashboard: React.FC<DashboardProps> = ({ favorites, toggleFavorite,
              <button
                 onClick={() => setShowOnlyRelevant(!showOnlyRelevant)}
                 className={`flex items-center gap-2 px-4 py-2 rounded-lg border transition-all text-sm font-medium ${
-                    !showOnlyRelevant 
-                        ? 'bg-blue-100 text-blue-800 border-blue-200 dark:bg-blue-900/40 dark:text-blue-300 dark:border-blue-800' 
-                        : 'bg-white text-gray-600 border-gray-200 dark:bg-slate-900 dark:text-gray-300 dark:border-slate-700'
+                    showOnlyRelevant 
+                        ? 'bg-blue-600 text-white border-blue-600 shadow-md' 
+                        : 'bg-white text-gray-600 border-gray-200 dark:bg-slate-900 dark:text-gray-300 dark:border-slate-700 hover:bg-gray-50'
                 }`}
              >
                 <Layers size={16} />
-                <span>Mostrar todas (sin filtro keywords)</span>
+                <span>{showOnlyRelevant ? 'Mostrando solo relevantes' : 'Mostrar todas'}</span>
              </button>
 
              <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 w-full xl:w-auto xl:justify-end">
-                <span className="text-sm text-gray-500 dark:text-gray-400 hidden sm:inline-block">{sortedTenders.length} resultados</span>
+                <span className="text-sm text-gray-500 dark:text-gray-400 hidden sm:inline-block">
+                    {sortedTenders.length} licitaciones encontradas
+                </span>
                 
                 <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
-                    {/* Filtro Origen */}
-                    <div className="flex items-center gap-2 bg-white dark:bg-slate-900 px-3 py-1.5 rounded-lg border border-gray-200 dark:border-slate-700 shadow-sm transition-colors min-w-[140px]">
-                        <Database size={14} className="text-gray-400" />
-                        <select
-                            value={selectedSource}
-                            onChange={(e) => setSelectedSource(e.target.value as SourceFilter)}
-                            className="bg-transparent border-none text-gray-700 dark:text-gray-200 font-medium focus:ring-0 cursor-pointer outline-none text-sm w-full"
-                        >
-                            <option value="all">Orígenes</option>
-                            <option value="Perfiles Contratante">Perfiles</option>
-                            <option value="Plataformas Agregadas">Agregadas</option>
-                            <option value="Contratos Menores">Menores</option>
-                        </select>
-                    </div>
-
                     {/* Ordenar */}
                     <div className="flex items-center gap-2 bg-white dark:bg-slate-900 px-3 py-1.5 rounded-lg border border-gray-200 dark:border-slate-700 shadow-sm transition-colors min-w-[140px]">
                         <Filter size={14} className="text-gray-400" />
@@ -202,10 +191,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ favorites, toggleFavorite,
                             onChange={(e) => setSortOrder(e.target.value as SortOption)}
                             className="bg-transparent border-none text-gray-700 dark:text-gray-200 font-medium focus:ring-0 cursor-pointer outline-none text-sm w-full"
                         >
-                            <option value="newest">Recientes</option>
-                            <option value="oldest">Antiguas</option>
-                            <option value="highest_budget">Presupuesto +</option>
-                            <option value="lowest_budget">Presupuesto -</option>
+                            <option value="newest">Más recientes</option>
+                            <option value="oldest">Más antiguas</option>
+                            <option value="highest_budget">Mayor importe</option>
+                            <option value="lowest_budget">Menor importe</option>
                         </select>
                     </div>
                 </div>
@@ -214,9 +203,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ favorites, toggleFavorite,
       </div>
 
       {loading ? (
-        <div className="flex flex-col items-center justify-center py-20">
+        <div className="flex flex-col items-center justify-center py-20 bg-white dark:bg-slate-900/50 rounded-xl border border-gray-100 dark:border-slate-800">
           <Loader2 className="animate-spin text-blue-600 mb-4" size={40} />
-          <p className="text-gray-500 dark:text-gray-400">Accediendo a la Plataforma de Contratación...</p>
+          <p className="text-gray-900 dark:text-white font-medium">Obteniendo datos oficiales...</p>
+          <p className="text-sm text-gray-500 mt-2">Conectando con contrataciondelestado.es</p>
         </div>
       ) : (
         <div className="space-y-6">
@@ -229,19 +219,19 @@ export const Dashboard: React.FC<DashboardProps> = ({ favorites, toggleFavorite,
                 return (
                     <React.Fragment key={tender.id}>
                         {showDivider && (
-                            <div className="flex items-center gap-4 py-4">
-                                <div className="h-px bg-gray-200 dark:bg-slate-800 flex-1"></div>
-                                <div className="px-4 py-1 bg-gray-50 dark:bg-slate-900 text-gray-400 rounded-full text-xs font-bold uppercase tracking-wider flex items-center gap-2">
+                            <div className="flex items-center gap-4 py-4 opacity-75">
+                                <div className="h-px bg-gray-300 dark:bg-slate-700 flex-1"></div>
+                                <div className="px-3 py-1 bg-gray-100 dark:bg-slate-800 text-gray-500 dark:text-gray-400 rounded-full text-xs font-bold uppercase tracking-wider flex items-center gap-2">
                                     <CheckCircle2 size={12} />
-                                    Vistas anteriormente
+                                    Leídas anteriormente
                                 </div>
-                                <div className="h-px bg-gray-200 dark:bg-slate-800 flex-1"></div>
+                                <div className="h-px bg-gray-300 dark:bg-slate-700 flex-1"></div>
                             </div>
                         )}
                         
-                        <div className="relative">
+                        <div className="relative group">
                             {isNewTender(tender.updated) && (
-                                <div className="absolute -left-2 top-6 w-1 h-12 bg-blue-500 rounded-r-lg shadow-sm"></div>
+                                <div className="absolute -left-2 top-6 w-1 h-12 bg-blue-600 rounded-r-lg shadow-[0_0_10px_rgba(37,99,235,0.5)] z-10"></div>
                             )}
                             <TenderCard 
                                 tender={tender} 
@@ -257,9 +247,17 @@ export const Dashboard: React.FC<DashboardProps> = ({ favorites, toggleFavorite,
               <div className="text-center py-16 bg-white dark:bg-slate-900 rounded-xl border border-dashed border-gray-300 dark:border-slate-700">
                 <Search className="mx-auto h-12 w-12 text-gray-300 mb-4" />
                 <h3 className="text-lg font-medium text-gray-900 dark:text-white">Sin resultados</h3>
-                <p className="text-gray-500 dark:text-gray-400 mt-1">
-                    No se han encontrado licitaciones con los filtros aplicados.
+                <p className="text-gray-500 dark:text-gray-400 mt-1 max-w-md mx-auto">
+                    No se han encontrado licitaciones en este momento. Intenta cambiar los filtros o desactivar "Solo relevantes".
                 </p>
+                {showOnlyRelevant && (
+                    <button 
+                        onClick={() => setShowOnlyRelevant(false)}
+                        className="mt-4 text-blue-600 hover:text-blue-800 font-medium text-sm underline"
+                    >
+                        Ver todas las licitaciones
+                    </button>
+                )}
               </div>
             )}
           </div>
@@ -269,20 +267,20 @@ export const Dashboard: React.FC<DashboardProps> = ({ favorites, toggleFavorite,
               <button
                 onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
                 disabled={currentPage === 1}
-                className="flex items-center gap-1 px-4 py-2 rounded-lg border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-gray-700 dark:text-gray-300 disabled:opacity-50"
+                className="flex items-center gap-1 px-4 py-2 rounded-lg border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-gray-700 dark:text-gray-300 disabled:opacity-50 hover:bg-gray-50 dark:hover:bg-slate-800 transition-colors"
               >
                 <ChevronLeft size={16} />
                 Anterior
               </button>
               
               <span className="text-sm text-gray-600 dark:text-gray-400 font-medium">
-                {currentPage} / {totalPages}
+                Página {currentPage} de {totalPages}
               </span>
 
               <button
                 onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
                 disabled={currentPage === totalPages}
-                className="flex items-center gap-1 px-4 py-2 rounded-lg border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-gray-700 dark:text-gray-300 disabled:opacity-50"
+                className="flex items-center gap-1 px-4 py-2 rounded-lg border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-gray-700 dark:text-gray-300 disabled:opacity-50 hover:bg-gray-50 dark:hover:bg-slate-800 transition-colors"
               >
                 Siguiente
                 <ChevronRight size={16} />
