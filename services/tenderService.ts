@@ -100,14 +100,6 @@ const FEED_CONFIG = [
     {
         url: 'https://contrataciondelestado.es/sindicacion/sindicacion_643/licitacionesPerfilesContratanteCompleto3.atom',
         sourceType: 'Perfiles Contratante'
-    },
-    {
-        url: 'https://contrataciondelestado.es/sindicacion/sindicacion_1044/PlataformasAgregadasSinMenores.atom',
-        sourceType: 'Plataformas Agregadas'
-    },
-    {
-        url: 'https://contrataciondelestado.es/sindicacion/sindicacion_1143/contratosMenoresPerfilesContratantes.atom',
-        sourceType: 'Contratos Menores'
     }
 ];
 
