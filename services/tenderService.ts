@@ -1,12 +1,18 @@
 import { Tender } from '../types';
 
+// Configuración para usar nuestra propia API interna
+const FEED_ENDPOINTS = [
+  { sourceType: 'Perfiles Contratante', param: 'perfiles' },
+  { sourceType: 'Plataformas Agregadas', param: 'agregadas' },
+  { sourceType: 'Contratos Menores', param: 'menores' }
+];
+
+// Utility: Normalize strings for search
 const normalizeString = (str: string): string => {
-  return str
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "");
+  return str.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 };
 
+// Utility: Find keyword matches
 const findKeywords = (text: string, keywordsList: string[]): string[] => {
   const normalizedText = normalizeString(text);
   const matches = new Set<string>();
@@ -19,193 +25,168 @@ const findKeywords = (text: string, keywordsList: string[]): string[] => {
   return Array.from(matches);
 };
 
-const formatCurrency = (value: number): string => {
-  return new Intl.NumberFormat('es-ES', {
-    style: 'currency',
-    currency: 'EUR',
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2
-  }).format(value);
-};
-
-const extractAmount = (text: string): string | undefined => {
-    const labelRegex = /(?:Importe|Valor estimado|Presupuesto base|Importe total)(?:.*?):\s*([\d\.,]+)/i;
-    const labelMatch = text.match(labelRegex);
-    if (labelMatch) return normalizeAndFormatAmount(labelMatch[1]);
-    const currencyRegex = /([\d\.,]+)\s?(?:€|EUR|euros)/i;
-    const currencyMatch = text.match(currencyRegex);
-    if (currencyMatch) return normalizeAndFormatAmount(currencyMatch[1]);
-    return undefined;
-};
-
-const normalizeAndFormatAmount = (raw: string): string | undefined => {
-    let clean = raw.trim();
-    if (clean.includes('.') && !clean.includes(',')) {
-        if (clean.indexOf('.') === clean.length - 3) {
-             const num = parseFloat(clean);
-             if (!isNaN(num)) return formatCurrency(num);
-        }
-    }
-    if (clean.includes('.') && clean.includes(',')) {
-        clean = clean.replace(/\./g, '').replace(',', '.');
-    } else if (clean.includes(',')) {
-        clean = clean.replace(',', '.');
-    }
-    const num = parseFloat(clean);
-    if (!isNaN(num)) return formatCurrency(num);
-    return undefined;
-};
-
-const extractOrganism = (text: string): string | undefined => {
-    const regex = /Órgano de Contratación:\s*(.*?)(?:;|,|\. |$)/i;
-    const match = text.match(regex);
-    return match ? match[1].trim() : undefined;
-};
-
-const extractStatus = (text: string): string | undefined => {
-    // Actualizado para detenerse en etiquetas HTML (<)
-    const regex = /Estado:\s*(.*?)(?:<|;|,|\. |$)/i;
-    const match = text.match(regex);
-    return match ? match[1].trim() : undefined;
-};
-
-const cleanSummary = (text: string): string => {
-    let clean = text.replace(/<[^>]*>?/gm, '');
-    return clean;
-};
-
-const FEED_CONFIG = [
-    {
-        url: 'https://contrataciondelsectorpublico.gob.es/sindicacion/sindicacion_643/licitacionesPerfilesContratanteCompleto3.atom',
-        sourceType: 'Perfiles Contratante'
-    },
-    {
-        url: 'https://contrataciondelsectorpublico.gob.es/sindicacion/sindicacion_1044/PlataformasAgregadasSinMenores.atom',
-        sourceType: 'Plataformas Agregadas'
-    },
-    {
-        url: 'https://contrataciondelsectorpublico.gob.es/sindicacion/sindicacion_1143/contratosMenoresPerfilesContratantes.atom',
-        sourceType: 'Contratos Menores'
-    }
-];
-
-const fetchFeedContent = async (targetUrl: string): Promise<string | null> => {
-    try {
-        const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`;
-        const response = await fetch(proxyUrl);
-        if (response.ok) return await response.text();
-    } catch (e) {}
-    try {
-        const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`;
-        const response = await fetch(proxyUrl);
-        if (response.ok) return await response.text();
-    } catch (e) {}
-    return null;
+// Utility: Clean HTML
+const cleanHtml = (html: string): string => {
+    return html.replace(/<[^>]*>?/gm, '').trim();
 };
 
 export const fetchTenders = async (keywords: string[]): Promise<Tender[]> => {
-  const allTendersMap = new Map<string, Tender>();
-  const MAX_PAGES_PER_FEED = 5;
+  const allTenders: Tender[] = [];
+  const processedIds = new Set<string>();
 
-  const promises = FEED_CONFIG.map(async (feed) => {
-    let currentUrl: string | null = feed.url;
-    let pagesProcessed = 0;
-
-    while (currentUrl && pagesProcessed < MAX_PAGES_PER_FEED) {
+  // Fetch all feeds in parallel using our internal API
+  const promises = FEED_ENDPOINTS.map(async (endpoint) => {
       try {
-        const xmlContent = await fetchFeedContent(currentUrl);
-        if (xmlContent && xmlContent.trim().startsWith("<")) {
-          const { tenders, nextUrl } = parseAtomFeed(xmlContent, feed.sourceType, keywords);
+          const url = `/api/estado-atom?feed=${endpoint.param}`;
+          console.log(`Fetching ${endpoint.sourceType} from ${url}`);
+          
+          const response = await fetch(url);
+          if (!response.ok) throw new Error(`Status: ${response.status}`);
+          
+          const xmlText = await response.text();
+          const tenders = parseAtomXML(xmlText, endpoint.sourceType, keywords);
           
           tenders.forEach(t => {
-            if (!allTendersMap.has(t.id)) {
-              allTendersMap.set(t.id, t);
-            }
+              if (!processedIds.has(t.id)) {
+                  processedIds.add(t.id);
+                  allTenders.push(t);
+              }
           });
-
-          currentUrl = nextUrl;
-          pagesProcessed++;
-        } else {
-          currentUrl = null;
-        }
-      } catch (error) {
-        console.error(`Error processing feed ${feed.sourceType} at ${currentUrl}:`, error);
-        currentUrl = null;
+      } catch (e) {
+          console.error(`Error fetching ${endpoint.sourceType}:`, e);
       }
-    }
   });
 
   await Promise.all(promises);
   
-  return Array.from(allTendersMap.values()).sort((a, b) => 
-    new Date(b.updated).getTime() - new Date(a.updated).getTime()
+  return allTenders.sort((a, b) => 
+      new Date(b.updated).getTime() - new Date(a.updated).getTime()
   );
 };
 
-export const parseAtomFeed = (
-  xmlString: string, 
-  sourceType: string, 
-  keywordsList: string[]
-): { tenders: Tender[], nextUrl: string | null } => {
-  const parser = new DOMParser();
-  const xmlDoc = parser.parseFromString(xmlString, "text/xml");
-  
-  // Extraer URL de la siguiente página (next link)
-  let nextUrl: string | null = null;
-  const links = xmlDoc.getElementsByTagName("link");
-  for (let i = 0; i < links.length; i++) {
-    const link = links[i];
-    if (link.getAttribute("rel") === "next") {
-      nextUrl = link.getAttribute("href");
-      break;
-    }
-  }
+// Parser robusto usando DOMParser nativo (mucho mejor que Regex para XML complejo)
+const parseAtomXML = (xmlString: string, sourceType: string, keywordsList: string[]): Tender[] => {
+    const parser = new DOMParser();
+    const xmlDoc = parser.parseFromString(xmlString, "text/xml");
+    const entries = Array.from(xmlDoc.getElementsByTagName("entry"));
 
-  const entries = xmlDoc.getElementsByTagName("entry");
-  const results: Tender[] = [];
+    return entries.map(entry => {
+        // --- Helpers para navegar XML ignorando namespaces (cac:, cbc:, ns1:) ---
+        const findChild = (parent: Element, localName: string): Element | null => {
+            const children = parent.children;
+            for (let i = 0; i < children.length; i++) {
+                if (children[i].localName === localName || children[i].nodeName.endsWith(`:${localName}`)) {
+                    return children[i];
+                }
+            }
+            return null;
+        };
 
-  for (let i = 0; i < entries.length; i++) {
-    const entry = entries[i];
-    const title = entry.getElementsByTagName("title")[0]?.textContent || "Sin título";
-    const contentNode = entry.getElementsByTagName("content")[0] || entry.getElementsByTagName("summary")[0];
-    const rawDescription = contentNode?.textContent || "";
-    
-    const amount = extractAmount(rawDescription);
-    const organism = extractOrganism(rawDescription);
-    const status = extractStatus(rawDescription);
-    const summary = cleanSummary(rawDescription);
+        const getText = (node: Element | null): string => node ? node.textContent || "" : "";
 
-    const linkNode = entry.getElementsByTagName("link")[0];
-    const link = linkNode ? (linkNode.getAttribute("href") || "") : "";
-    const updated = entry.getElementsByTagName("updated")[0]?.textContent || new Date().toISOString();
-    const id = entry.getElementsByTagName("id")[0]?.textContent || `gen-${Math.random()}`;
+        // --- Extracción de Datos Básicos ---
+        const title = getText(findChild(entry, "title")) || "Sin título";
+        const summaryHtml = getText(findChild(entry, "summary"));
+        const summary = cleanHtml(summaryHtml);
+        const id = getText(findChild(entry, "id"));
+        const updated = getText(findChild(entry, "updated"));
+        
+        // Link
+        let link = "";
+        const links = entry.getElementsByTagName("link");
+        for(let i=0; i<links.length; i++) {
+             if(links[i].getAttribute("rel") === "alternate") {
+                 link = links[i].getAttribute("href") || "";
+                 break;
+             }
+             if (!link) link = links[i].getAttribute("href") || "";
+        }
 
-    const fullText = `${title} ${summary} ${organism || ''}`;
-    const keywords = findKeywords(fullText, keywordsList);
+        // --- Extracción Profunda (ContractFolderStatus) ---
+        const folder = findChild(entry, "ContractFolderStatus");
+        
+        let organism = "Órgano de Contratación";
+        let amount = "";
+        let status = "Publicada";
+        
+        if (folder) {
+            // Organismo
+            const locatedParty = findChild(folder, "LocatedContractingParty");
+            if (locatedParty) {
+                const party = findChild(locatedParty, "Party");
+                if (party) {
+                    const partyName = findChild(party, "PartyName");
+                    if (partyName) {
+                        organism = getText(findChild(partyName, "Name")) || organism;
+                    }
+                }
+            }
 
-    let contractType = "Otros";
-    if (fullText.toLowerCase().includes("servicios")) contractType = "Servicios";
-    else if (fullText.toLowerCase().includes("suministros")) contractType = "Suministros";
-    else if (fullText.toLowerCase().includes("obras")) contractType = "Obras";
+            // Importe
+            const project = findChild(folder, "ProcurementProject");
+            if (project) {
+                const budget = findChild(project, "BudgetAmount");
+                if (budget) {
+                    const amountNode = findChild(budget, "EstimatedOverallContractAmount") || 
+                                     findChild(budget, "TaxExclusiveAmount") ||
+                                     findChild(budget, "TotalAmount");
+                    const val = getText(amountNode);
+                    if (val) {
+                        const num = parseFloat(val);
+                        if (!isNaN(num)) {
+                             amount = new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR' }).format(num);
+                        }
+                    }
+                }
+            }
 
-    results.push({
-      id,
-      title,
-      summary: summary.length > 300 ? summary.substring(0, 300) + "..." : summary,
-      link,
-      updated,
-      keywordsFound: keywords,
-      isRead: false,
-      sourceType,
-      contractType,
-      status,
-      amount,
-      organism
+            // Estado
+            const tenderResult = findChild(folder, "TenderResult");
+            if (tenderResult) {
+                const resultCode = getText(findChild(tenderResult, "ResultCode"));
+                if (resultCode === '8') status = 'Adjudicada';
+                else if (resultCode === '9') status = 'Formalizada';
+                else if (resultCode === '10') status = 'Desierta';
+                else if (resultCode === '4') status = 'Anulada';
+            }
+        }
+
+        // Fallback de estado desde el resumen
+        if (status === "Publicada") {
+             if (summary.includes("Estado: Adjudicada")) status = "Adjudicada";
+             else if (summary.includes("Estado: Resuelta")) status = "Formalizada";
+             else if (summary.includes("Estado: Desierta")) status = "Desierta";
+        }
+
+        // Fallback de importe si no se extrajo del XML estructurado
+        if (!amount) {
+             const amountMatch = summary.match(/Importe(?:.*?):\s*([\d\.,]+)/i);
+             if (amountMatch) amount = amountMatch[1] + " €";
+        }
+
+        // Categorización
+        const fullText = `${title} ${summary} ${organism}`;
+        const matchedKeywords = findKeywords(fullText, keywordsList);
+        
+        let contractType = "Otros";
+        const lower = fullText.toLowerCase();
+        if (lower.includes("servicios")) contractType = "Servicios";
+        else if (lower.includes("suministros")) contractType = "Suministros";
+        else if (lower.includes("obras")) contractType = "Obras";
+
+        return {
+            id: id || Math.random().toString(),
+            title,
+            summary: summary.length > 300 ? summary.substring(0, 300) + "..." : summary,
+            link,
+            updated: updated || new Date().toISOString(),
+            amount: amount || "Consultar",
+            organism,
+            contractType,
+            sourceType,
+            status,
+            keywordsFound: matchedKeywords,
+            isRead: false
+        };
     });
-  }
-  
-  return {
-    tenders: results,
-    nextUrl
-  };
 };
