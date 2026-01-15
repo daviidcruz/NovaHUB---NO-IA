@@ -1,15 +1,12 @@
 import { Tender } from '../types';
 
-const TARGET_URL = 'https://contrataciondelestado.es/sindicacion/sindicacion_643/licitacionesPerfilesContratanteCompleto3.atom';
-// Cambiamos a corsproxy.io que maneja mejor archivos grandes y tiempos de respuesta que allorigins
-const PROXY_URL = 'https://corsproxy.io/?';
-
-// Utility: Normalize strings for search
 const normalizeString = (str: string): string => {
-  return str.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  return str
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
 };
 
-// Utility: Find keyword matches
 const findKeywords = (text: string, keywordsList: string[]): string[] => {
   const normalizedText = normalizeString(text);
   const matches = new Set<string>();
@@ -22,142 +19,193 @@ const findKeywords = (text: string, keywordsList: string[]): string[] => {
   return Array.from(matches);
 };
 
-// Utility: Clean HTML
-const cleanHtml = (html: string): string => {
-    return html.replace(/<[^>]*>?/gm, '');
+const formatCurrency = (value: number): string => {
+  return new Intl.NumberFormat('es-ES', {
+    style: 'currency',
+    currency: 'EUR',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  }).format(value);
+};
+
+const extractAmount = (text: string): string | undefined => {
+    const labelRegex = /(?:Importe|Valor estimado|Presupuesto base|Importe total)(?:.*?):\s*([\d\.,]+)/i;
+    const labelMatch = text.match(labelRegex);
+    if (labelMatch) return normalizeAndFormatAmount(labelMatch[1]);
+    const currencyRegex = /([\d\.,]+)\s?(?:€|EUR|euros)/i;
+    const currencyMatch = text.match(currencyRegex);
+    if (currencyMatch) return normalizeAndFormatAmount(currencyMatch[1]);
+    return undefined;
+};
+
+const normalizeAndFormatAmount = (raw: string): string | undefined => {
+    let clean = raw.trim();
+    if (clean.includes('.') && !clean.includes(',')) {
+        if (clean.indexOf('.') === clean.length - 3) {
+             const num = parseFloat(clean);
+             if (!isNaN(num)) return formatCurrency(num);
+        }
+    }
+    if (clean.includes('.') && clean.includes(',')) {
+        clean = clean.replace(/\./g, '').replace(',', '.');
+    } else if (clean.includes(',')) {
+        clean = clean.replace(',', '.');
+    }
+    const num = parseFloat(clean);
+    if (!isNaN(num)) return formatCurrency(num);
+    return undefined;
+};
+
+const extractOrganism = (text: string): string | undefined => {
+    const regex = /Órgano de Contratación:\s*(.*?)(?:;|,|\. |$)/i;
+    const match = text.match(regex);
+    return match ? match[1].trim() : undefined;
+};
+
+const extractStatus = (text: string): string | undefined => {
+    // Actualizado para detenerse en etiquetas HTML (<)
+    const regex = /Estado:\s*(.*?)(?:<|;|,|\. |$)/i;
+    const match = text.match(regex);
+    return match ? match[1].trim() : undefined;
+};
+
+const cleanSummary = (text: string): string => {
+    let clean = text.replace(/<[^>]*>?/gm, '');
+    return clean;
+};
+
+const FEED_CONFIG = [
+    {
+        url: 'https://contrataciondelsectorpublico.gob.es/sindicacion/sindicacion_643/licitacionesPerfilesContratanteCompleto3.atom',
+        sourceType: 'Perfiles Contratante'
+    },
+    {
+        url: 'https://contrataciondelsectorpublico.gob.es/sindicacion/sindicacion_1044/PlataformasAgregadasSinMenores.atom',
+        sourceType: 'Plataformas Agregadas'
+    },
+    {
+        url: 'https://contrataciondelsectorpublico.gob.es/sindicacion/sindicacion_1143/contratosMenoresPerfilesContratantes.atom',
+        sourceType: 'Contratos Menores'
+    }
+];
+
+const fetchFeedContent = async (targetUrl: string): Promise<string | null> => {
+    try {
+        const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`;
+        const response = await fetch(proxyUrl);
+        if (response.ok) return await response.text();
+    } catch (e) {}
+    try {
+        const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`;
+        const response = await fetch(proxyUrl);
+        if (response.ok) return await response.text();
+    } catch (e) {}
+    return null;
 };
 
 export const fetchTenders = async (keywords: string[]): Promise<Tender[]> => {
-  try {
-    // Construimos la URL del proxy. 
-    // Nota: corsproxy.io funciona concatenando la URL codificada o cruda. 
-    // Usamos encodeURIComponent para asegurar caracteres especiales.
-    const finalUrl = `${PROXY_URL}${encodeURIComponent(TARGET_URL)}`;
-    
-    console.log("Fetching tenders from:", finalUrl);
+  const allTendersMap = new Map<string, Tender>();
+  const MAX_PAGES_PER_FEED = 5;
 
-    const response = await fetch(finalUrl);
-    
-    if (!response.ok) {
-        throw new Error(`Error HTTP al obtener feed: ${response.status} ${response.statusText}`);
+  const promises = FEED_CONFIG.map(async (feed) => {
+    let currentUrl: string | null = feed.url;
+    let pagesProcessed = 0;
+
+    while (currentUrl && pagesProcessed < MAX_PAGES_PER_FEED) {
+      try {
+        const xmlContent = await fetchFeedContent(currentUrl);
+        if (xmlContent && xmlContent.trim().startsWith("<")) {
+          const { tenders, nextUrl } = parseAtomFeed(xmlContent, feed.sourceType, keywords);
+          
+          tenders.forEach(t => {
+            if (!allTendersMap.has(t.id)) {
+              allTendersMap.set(t.id, t);
+            }
+          });
+
+          currentUrl = nextUrl;
+          pagesProcessed++;
+        } else {
+          currentUrl = null;
+        }
+      } catch (error) {
+        console.error(`Error processing feed ${feed.sourceType} at ${currentUrl}:`, error);
+        currentUrl = null;
+      }
     }
-    
-    // 2. Obtener texto y parsear XML nativamente
-    const xmlText = await response.text();
-    const parser = new DOMParser();
-    const xmlDoc = parser.parseFromString(xmlText, "text/xml");
-    
-    const entries = Array.from(xmlDoc.getElementsByTagName("entry"));
-    
-    if (entries.length === 0) {
-        console.warn("No entries found in XML. Raw XML preview:", xmlText.substring(0, 200));
+  });
+
+  await Promise.all(promises);
+  
+  return Array.from(allTendersMap.values()).sort((a, b) => 
+    new Date(b.updated).getTime() - new Date(a.updated).getTime()
+  );
+};
+
+export const parseAtomFeed = (
+  xmlString: string, 
+  sourceType: string, 
+  keywordsList: string[]
+): { tenders: Tender[], nextUrl: string | null } => {
+  const parser = new DOMParser();
+  const xmlDoc = parser.parseFromString(xmlString, "text/xml");
+  
+  // Extraer URL de la siguiente página (next link)
+  let nextUrl: string | null = null;
+  const links = xmlDoc.getElementsByTagName("link");
+  for (let i = 0; i < links.length; i++) {
+    const link = links[i];
+    if (link.getAttribute("rel") === "next") {
+      nextUrl = link.getAttribute("href");
+      break;
     }
-
-    return entries.map(entry => {
-        // Helpers para extracción XML ignorando namespaces (cac:, cbc:, etc.)
-        const getText = (node: Element | null): string => node ? node.textContent || "" : "";
-        
-        // Busca un nodo descendiente por su nombre local (sin prefijo)
-        // Esto es crucial para la PLACSP que usa muchos namespaces
-        const findNode = (parent: Element, localName: string): Element | null => {
-            const children = parent.getElementsByTagName("*");
-            for (let i = 0; i < children.length; i++) {
-                if (children[i].localName === localName) return children[i];
-            }
-            return null;
-        };
-        
-        // Datos básicos
-        const title = getText(findNode(entry, "title")) || "Sin título";
-        const summaryHtml = getText(findNode(entry, "summary"));
-        const summary = cleanHtml(summaryHtml);
-        const id = getText(findNode(entry, "id"));
-        const updated = getText(findNode(entry, "updated"));
-
-        // Link (buscar rel="alternate" o usar el primero)
-        let link = "";
-        const links = entry.getElementsByTagName("link");
-        for (let i=0; i<links.length; i++) {
-            const rel = links[i].getAttribute("rel");
-            const href = links[i].getAttribute("href");
-            if (rel === "alternate" || !rel) {
-                link = href || "";
-                if (rel === "alternate") break;
-            }
-        }
-
-        // Extracción profunda de datos específicos (Organismo, Importe, Estado)
-        // Navegamos buscando por nombre de etiqueta sin importar el namespace
-        const folder = findNode(entry, "ContractFolderStatus");
-        
-        let organism = "Organismo Desconocido";
-        let amount = "Consultar";
-        let status = "Publicada";
-
-        if (folder) {
-            // Organismo: Buscamos 'PartyName' dentro de la estructura
-            const party = findNode(folder, "PartyName"); // Búsqueda profunda simplificada
-            if (party) {
-                const name = getText(findNode(party, "Name"));
-                if (name) organism = name;
-            }
-
-            // Importe: Buscamos 'BudgetAmount'
-            const budget = findNode(folder, "BudgetAmount");
-            if (budget) {
-                const val = getText(findNode(budget, "TaxExclusiveAmount")) || getText(findNode(budget, "EstimatedOverallContractAmount"));
-                if (val) {
-                    const num = parseFloat(val);
-                    if (!isNaN(num)) {
-                         amount = new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR' }).format(num);
-                    }
-                }
-            }
-            
-            // Estado: Buscamos 'TenderResult' -> 'ResultCode'
-            const result = findNode(folder, "TenderResult");
-            if (result) {
-                const code = getText(findNode(result, "ResultCode"));
-                if (code === '8') status = 'Adjudicada';
-                if (code === '9') status = 'Formalizada';
-            }
-        }
-
-        // Fallback: Si no detectamos estado por código, intentamos sacarlo del resumen
-        if (status === "Publicada") {
-            const match = summary.match(/Estado:\s*(.*?)(?:<|;|,|\. |$)/i);
-            if (match) status = match[1].trim();
-        }
-
-        // Keywords & Categorización
-        const fullText = `${title} ${summary} ${organism}`;
-        const matchedKeywords = findKeywords(fullText, keywords);
-        
-        let contractType = "Otros";
-        const lower = fullText.toLowerCase();
-        if (lower.includes("servicios")) contractType = "Servicios";
-        else if (lower.includes("suministros")) contractType = "Suministros";
-        else if (lower.includes("obras")) contractType = "Obras";
-
-        return {
-            id: id || Math.random().toString(),
-            title,
-            summary: summary.length > 300 ? summary.substring(0, 300) + "..." : summary,
-            link,
-            updated: updated || new Date().toISOString(),
-            amount,
-            organism,
-            contractType,
-            sourceType: "PLACSP",
-            status,
-            keywordsFound: matchedKeywords,
-            isRead: false
-        };
-    }).sort((a, b) => new Date(b.updated).getTime() - new Date(a.updated).getTime());
-
-  } catch (e) {
-    console.error("Fallo crítico obteniendo licitaciones:", e);
-    // Retornamos array vacío para no romper la UI, pero el error ya fue logueado
-    return [];
   }
+
+  const entries = xmlDoc.getElementsByTagName("entry");
+  const results: Tender[] = [];
+
+  for (let i = 0; i < entries.length; i++) {
+    const entry = entries[i];
+    const title = entry.getElementsByTagName("title")[0]?.textContent || "Sin título";
+    const contentNode = entry.getElementsByTagName("content")[0] || entry.getElementsByTagName("summary")[0];
+    const rawDescription = contentNode?.textContent || "";
+    
+    const amount = extractAmount(rawDescription);
+    const organism = extractOrganism(rawDescription);
+    const status = extractStatus(rawDescription);
+    const summary = cleanSummary(rawDescription);
+
+    const linkNode = entry.getElementsByTagName("link")[0];
+    const link = linkNode ? (linkNode.getAttribute("href") || "") : "";
+    const updated = entry.getElementsByTagName("updated")[0]?.textContent || new Date().toISOString();
+    const id = entry.getElementsByTagName("id")[0]?.textContent || `gen-${Math.random()}`;
+
+    const fullText = `${title} ${summary} ${organism || ''}`;
+    const keywords = findKeywords(fullText, keywordsList);
+
+    let contractType = "Otros";
+    if (fullText.toLowerCase().includes("servicios")) contractType = "Servicios";
+    else if (fullText.toLowerCase().includes("suministros")) contractType = "Suministros";
+    else if (fullText.toLowerCase().includes("obras")) contractType = "Obras";
+
+    results.push({
+      id,
+      title,
+      summary: summary.length > 300 ? summary.substring(0, 300) + "..." : summary,
+      link,
+      updated,
+      keywordsFound: keywords,
+      isRead: false,
+      sourceType,
+      contractType,
+      status,
+      amount,
+      organism
+    });
+  }
+  
+  return {
+    tenders: results,
+    nextUrl
+  };
 };
